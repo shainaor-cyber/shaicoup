@@ -1,0 +1,1367 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>קופונט - ניהול שוברים</title>
+    
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="קופונט">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#38bdf8"> 
+    
+    <script>
+        const manifest = {
+            "name": "קופונט - ניהול שוברים",
+            "short_name": "קופונט",
+            "start_url": ".",
+            "display": "standalone",
+            "background_color": "#f3f4f6",
+            "theme_color": "#38bdf8",
+            "icons": [
+                {
+                    "src": "https://api.dicebear.com/7.x/shapes/svg?seed=couponet&backgroundColor=38bdf8",
+                    "sizes": "192x192",
+                    "type": "image/svg+xml"
+                }
+            ]
+        };
+        const stringManifest = JSON.stringify(manifest);
+        const blob = new Blob([stringManifest], {type: 'application/json'});
+        const manifestURL = URL.createObjectURL(blob);
+        document.querySelector('head').insertAdjacentHTML('beforeend', `<link rel="manifest" href="${manifestURL}">`);
+    </script>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.0/dist/JsBarcode.all.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;600;700&display=swap');
+        
+        body {
+            font-family: 'Rubik', sans-serif;
+            background-color: #f3f4f6;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .voucher-card {
+            position: relative;
+            background: white;
+            border-radius: 1rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            overflow: hidden;
+            transition: transform 0.2s ease-in-out;
+        }
+        
+        .voucher-card:hover { transform: translateY(-2px); }
+
+        .voucher-card::before, .voucher-card::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            width: 16px;
+            height: 16px;
+            background-color: #f3f4f6;
+            border-radius: 50%;
+            transform: translateY(-50%);
+            z-index: 10;
+        }
+
+        .voucher-card::before { left: -8px; }
+        .voucher-card::after { right: -8px; }
+
+        .voucher-divider {
+            border-top: 2px dashed #e5e7eb;
+            margin: 0 12px;
+            position: relative;
+        }
+
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        .modal-enter { opacity: 0; transform: scale(0.95) translateY(10px); }
+        .modal-enter-active {
+            opacity: 1; transform: scale(1) translateY(0); transition: opacity 300ms, transform 300ms;
+        }
+        
+        .gradient-bg { background: linear-gradient(135deg, #7dd3fc 0%, #0284c7 100%); } 
+    </style>
+</head>
+<body class="text-gray-800 h-screen flex flex-col overflow-hidden">
+
+    <!-- מסך טעינה שמסתיר את הכל עד שהאפליקציה מוכנה -->
+    <div id="startupLoader" class="fixed inset-0 bg-white z-[200] flex flex-col items-center justify-center transition-opacity duration-500">
+        <div class="w-20 h-20 bg-sky-500 rounded-full flex items-center justify-center mb-6 animate-pulse shadow-lg shadow-sky-200">
+            <i data-lucide="ticket" class="w-10 h-10 text-white"></i>
+        </div>
+        <h2 class="text-2xl font-bold text-gray-800 mb-2">קופונט</h2>
+        <p class="text-sky-500 text-sm font-medium animate-pulse">טוען נתונים...</p>
+    </div>
+
+    <!-- Custom Dialog Modal -->
+    <div id="customDialog" class="fixed inset-0 bg-black/50 z-[100] hidden flex flex-col items-center justify-center p-4">
+        <div class="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-6 text-center">
+            <h3 id="dialogTitle" class="text-xl font-bold text-gray-800 mb-2"></h3>
+            <p id="dialogMessage" class="text-gray-600 mb-6 text-sm"></p>
+            <div id="dialogInputContainer" class="hidden mb-6">
+                <input type="number" id="dialogInput" class="w-full border border-gray-300 rounded-xl p-3 text-center text-lg font-bold focus:ring-2 focus:ring-sky-500 outline-none" autocomplete="off" placeholder="****">
+            </div>
+            <div class="flex gap-3 justify-center">
+                <button id="dialogBtnCancel" class="hidden flex-1 bg-gray-200 text-gray-800 py-2 rounded-xl font-medium hover:bg-gray-300 transition text-sm">ביטול</button>
+                <button id="dialogBtnOK" class="flex-1 gradient-bg text-white py-2 rounded-xl font-bold hover:shadow-lg transition text-sm">אישור</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- מסך נעילה (PIN) -->
+    <div id="pinScreen" class="fixed inset-0 bg-white z-50 flex flex-col items-center justify-center hidden">
+        <i data-lucide="lock" class="w-16 h-16 text-sky-500 mb-6"></i>
+        <h2 class="text-2xl font-bold mb-2">הזן קוד סודי</h2>
+        <p class="text-gray-500 mb-8 text-sm">האפליקציה נעולה. אנא הזן את הקוד שלך.</p>
+        <div class="flex gap-3 mb-8" dir="ltr">
+            <input type="password" maxlength="1" class="pin-input w-10 h-12 md:w-12 md:h-14 text-center text-xl font-bold border-2 border-gray-300 rounded-lg focus:border-sky-500 focus:outline-none">
+            <input type="password" maxlength="1" class="pin-input w-10 h-12 md:w-12 md:h-14 text-center text-xl font-bold border-2 border-gray-300 rounded-lg focus:border-sky-500 focus:outline-none">
+            <input type="password" maxlength="1" class="pin-input w-10 h-12 md:w-12 md:h-14 text-center text-xl font-bold border-2 border-gray-300 rounded-lg focus:border-sky-500 focus:outline-none">
+            <input type="password" maxlength="1" class="pin-input w-10 h-12 md:w-12 md:h-14 text-center text-xl font-bold border-2 border-gray-300 rounded-lg focus:border-sky-500 focus:outline-none">
+        </div>
+        <p id="pinError" class="text-red-500 text-sm font-medium hidden">קוד שגוי, נסה שוב</p>
+    </div>
+
+    <!-- Header & Summary -->
+    <header class="gradient-bg text-white pt-8 pb-4 md:pt-10 md:pb-6 px-4 shadow-lg rounded-b-3xl shrink-0 z-20">
+        <div class="max-w-4xl mx-auto">
+            <div class="flex justify-between items-center mb-4 md:mb-6">
+                <div>
+                    <h1 class="text-xl md:text-2xl font-bold flex items-center gap-2">
+                        <i data-lucide="ticket" class="w-6 h-6 md:w-7 md:h-7"></i>
+                        השוברים שלי
+                    </h1>
+                    <div id="cloudStatus" class="flex items-center gap-1 text-[10px] md:text-xs text-white/80 mt-1 font-medium">
+                        <i data-lucide="refresh-cw" class="w-3 h-3 animate-spin"></i> מתחבר...
+                    </div>
+                </div>
+                <div class="flex gap-2 md:gap-3">
+                    <button onclick="setFilter('archive')" id="archiveBtnHeader" class="bg-white/20 hover:bg-white/30 p-2 rounded-full transition relative" title="ארכיון שוברים">
+                        <i data-lucide="archive" class="w-4 h-4 md:w-5 md:h-5"></i>
+                    </button>
+                    <button onclick="exportToExcel()" class="bg-white/20 hover:bg-white/30 p-2 rounded-full transition" title="ייצוא לאקסל">
+                        <i data-lucide="file-spreadsheet" class="w-4 h-4 md:w-5 md:h-5"></i>
+                    </button>
+                    <button onclick="openSettingsModal()" class="bg-white/20 hover:bg-white/30 p-2 rounded-full transition" title="הגדרות וגיבוי">
+                        <i data-lucide="settings" class="w-4 h-4 md:w-5 md:h-5"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="flex gap-2 mb-1 overflow-x-auto hide-scrollbar pb-2">
+                <div class="bg-white/20 backdrop-blur-md rounded-2xl p-2.5 md:p-3 min-w-[90px] flex-1">
+                    <p class="text-[10px] md:text-xs opacity-80 mb-1 whitespace-nowrap">שווי פעיל</p>
+                    <p class="text-lg md:text-2xl font-bold flex items-center gap-1">
+                        <span id="totalValue">0</span> ₪
+                    </p>
+                </div>
+                <div class="bg-white/20 backdrop-blur-md rounded-2xl p-2.5 md:p-3 min-w-[100px] flex-1 cursor-pointer hover:bg-white/30 transition" onclick="setFilter('expiring-end-of-month')">
+                    <p class="text-[10px] md:text-xs opacity-80 mb-1 whitespace-nowrap">עד סוף החודש</p>
+                    <p class="text-lg md:text-2xl font-bold text-red-200 flex items-center gap-1">
+                        <span id="expiringEndOfMonthCount">0</span>
+                        <i data-lucide="alert-circle" class="w-4 h-4"></i>
+                    </p>
+                </div>
+                <div class="bg-white/20 backdrop-blur-md rounded-2xl p-2.5 md:p-3 min-w-[100px] flex-1 cursor-pointer hover:bg-white/30 transition" onclick="setFilter('expiring-two-months')">
+                    <p class="text-[10px] md:text-xs opacity-80 mb-1 whitespace-nowrap">פג (חודשיים)</p>
+                    <p class="text-lg md:text-2xl font-bold text-yellow-300 flex items-center gap-1">
+                        <span id="expiringTwoMonthsCount">0</span>
+                        <i data-lucide="clock" class="w-4 h-4"></i>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Categories, Business Filter, Sorting & Search -->
+    <div class="bg-white shadow-sm shrink-0 z-10 flex flex-col px-4 py-2 gap-3">
+        <!-- שורת חיפוש -->
+        <div class="w-full relative mt-1">
+            <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                <i data-lucide="search" class="w-4 h-4 text-gray-400"></i>
+            </div>
+            <input type="text" id="searchInput" oninput="setSearchQuery(this.value)" placeholder="חיפוש חופשי (בית עסק, תיאור, הערות...)" class="w-full border border-gray-200 rounded-xl py-2 pr-9 pl-8 text-sm focus:ring-2 focus:ring-sky-500 outline-none bg-gray-50 transition">
+            <button id="clearSearchBtn" onclick="clearSearch()" class="absolute inset-y-0 left-0 flex items-center pl-3 hidden text-gray-400 hover:text-sky-500 transition">
+                <i data-lucide="x-circle" class="w-4 h-4"></i>
+            </button>
+        </div>
+
+        <!-- קטגוריות -->
+        <div class="w-full overflow-x-auto hide-scrollbar border-b pb-2">
+            <div class="flex gap-2 p-1 items-center" id="categoriesContainer">
+            </div>
+        </div>
+        
+        <!-- סינון ומיון -->
+        <div class="w-full flex flex-row justify-between items-center gap-3">
+            <div class="flex items-center gap-2 flex-1">
+                <label class="text-xs font-medium text-gray-600 whitespace-nowrap hidden sm:block">בית עסק:</label>
+                <div class="relative w-full max-w-[180px]">
+                    <div class="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
+                        <i data-lucide="store" class="w-3.5 h-3.5 text-gray-400"></i>
+                    </div>
+                    <select id="businessSelect" onchange="setBusinessFilter(this.value)" class="w-full border border-gray-300 rounded-lg p-1.5 pr-7 text-xs md:text-sm focus:ring-2 focus:ring-sky-500 outline-none bg-white appearance-none">
+                        <option value="הכל">כל בתי העסק</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+                <label class="text-xs font-medium text-gray-600 whitespace-nowrap hidden sm:block">סדר לפי:</label>
+                <select id="sortSelect" onchange="setSortMode(this.value)" class="border border-gray-300 rounded-lg p-1.5 text-xs md:text-sm focus:ring-2 focus:ring-sky-500 outline-none bg-white">
+                    <option value="smart-default">ברירת מחדל חכמה</option>
+                    <option value="expiry-asc">תוקף (קרוב תחילה)</option>
+                    <option value="expiry-desc">תוקף (רחוק תחילה)</option>
+                    <option value="value-desc">ערך (גבוה לנמוך)</option>
+                    <option value="value-asc">ערך (נמוך לגבוה)</option>
+                    <option value="name-asc">אלפביתי (א-ת)</option>
+                    <option value="category">קטגוריה</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content Grid -->
+    <main class="flex-1 overflow-y-auto p-3 md:p-4 pb-24 relative">
+        
+        <div id="archiveBanner" class="hidden bg-gray-800 text-white p-3 rounded-xl mb-4 flex justify-between items-center shadow-md">
+            <div class="flex items-center gap-2">
+                <i data-lucide="archive" class="w-5 h-5 text-gray-300"></i>
+                <div>
+                    <h3 class="font-bold text-sm">ארכיון שוברים</h3>
+                    <p class="text-xs text-gray-300">שוברים שנוצלו במלואם.</p>
+                </div>
+            </div>
+            <button onclick="setFilter('הכל')" class="bg-gray-700 hover:bg-gray-600 text-xs px-3 py-1.5 rounded-lg transition">חזור לראשי</button>
+        </div>
+
+        <div class="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6" id="vouchersGrid">
+        </div>
+        
+        <!-- מצב ריק -->
+        <div id="emptyState" class="hidden flex flex-col items-center justify-center h-full text-center py-10 md:py-12 absolute inset-0">
+            <div class="bg-gray-100 p-4 md:p-6 rounded-full mb-3 md:mb-4">
+                <i data-lucide="ticket-dashed" class="w-12 h-12 md:w-16 md:h-16 text-gray-400"></i>
+            </div>
+            <h3 class="text-lg md:text-xl font-bold text-gray-700 mb-2" id="emptyStateTitle">אין שוברים להצגה</h3>
+            <p class="text-sm text-gray-500 mb-6" id="emptyStateDesc">לחץ על כפתור הפלוס למטה כדי להוסיף את השובר הראשון שלך.</p>
+            
+            <div class="mt-6 border-t border-gray-200 pt-6 px-4" id="recoverySection">
+                <p class="text-xs font-bold text-gray-600 mb-1">רוצה לשחזר נתונים קודמים?</p>
+                <label class="bg-sky-50 text-sky-700 border border-sky-200 py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 text-sm font-medium cursor-pointer hover:bg-sky-100 transition shadow-sm mt-3">
+                    <i data-lucide="upload-cloud" class="w-4 h-4"></i> בחר קובץ גיבוי
+                    <input type="file" accept=".json" class="hidden" onchange="importBackup(event)">
+                </label>
+            </div>
+        </div>
+    </main>
+
+    <!-- Floating Action Button -->
+    <button onclick="openVoucherModal()" class="fixed bottom-4 left-4 md:bottom-6 md:left-6 w-14 h-14 md:w-16 md:h-16 gradient-bg text-white rounded-full shadow-xl flex items-center justify-center hover:scale-105 transition-transform z-30">
+        <i data-lucide="plus" class="w-6 h-6 md:w-8 md:h-8"></i>
+    </button>
+
+    <!-- ================== MODALS ================== -->
+
+    <!-- Modal: הוספה / עריכת שובר -->
+    <div id="voucherModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-3 md:p-4">
+        <div class="bg-white rounded-2xl w-full max-w-md max-h-[95vh] flex flex-col shadow-2xl modal-content">
+            <div class="p-3 md:p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-2xl">
+                <h3 id="modalTitle" class="text-lg md:text-xl font-bold text-gray-800">הוספת שובר חדש</h3>
+                <button onclick="closeVoucherModal()" class="text-gray-500 hover:text-gray-700 p-1">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            
+            <div class="p-3 md:p-4 overflow-y-auto flex-1">
+                <form id="voucherForm" class="space-y-4">
+                    <input type="hidden" id="voucherId">
+                    
+                    <div class="mb-3 bg-indigo-50 p-3 rounded-xl border border-indigo-200" id="aiHelperSection">
+                        <p class="text-xs font-bold text-indigo-800 mb-2 flex items-center gap-1">
+                            <i data-lucide="sparkles" class="w-3 h-3"></i> עוזר חכם למילוי אוטומטי
+                        </p>
+                        <div class="flex gap-2">
+                            <label class="flex-1 bg-white text-indigo-600 border border-indigo-300 p-1.5 md:p-2 rounded-lg flex items-center justify-center gap-1 hover:bg-indigo-100 transition cursor-pointer text-xs md:text-sm font-medium">
+                                <i data-lucide="camera" class="w-3 h-3 md:w-4 md:h-4"></i> סריקה ✨
+                                <input type="file" accept="image/*" class="hidden" onchange="handleSmartScan(event)">
+                            </label>
+                            <button type="button" onclick="openSmartPaste()" class="flex-1 bg-white text-indigo-600 border border-indigo-300 p-1.5 md:p-2 rounded-lg flex items-center justify-center gap-1 hover:bg-indigo-100 transition text-xs md:text-sm font-medium">
+                                <i data-lucide="clipboard-paste" class="w-3 h-3 md:w-4 md:h-4"></i> טקסט ✨
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div id="smartPasteArea" class="hidden mb-3 bg-white p-3 rounded-xl border border-indigo-200 shadow-inner">
+                        <textarea id="smartPasteText" rows="2" class="w-full border border-gray-300 rounded-lg p-2 text-xs md:text-sm mb-2 focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="הדבק הודעה או אימייל..."></textarea>
+                        <button type="button" onclick="processSmartPaste()" class="w-full bg-indigo-600 text-white p-1.5 md:p-2 rounded-lg text-xs md:text-sm font-medium hover:bg-indigo-700 flex items-center justify-center gap-1">חלץ נתונים ✨</button>
+                    </div>
+
+                    <div id="aiLoading" class="hidden mb-3 flex items-center justify-center gap-2 text-indigo-600 bg-indigo-50 p-2 rounded-xl border border-indigo-200">
+                        <i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i>
+                        <span class="text-xs font-medium">הבינה קוראת נתונים...</span>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 mb-1">בית עסק (חובה)</label>
+                            <input type="text" id="vName" required class="w-full border border-gray-300 rounded-xl p-2 md:p-3 text-sm focus:ring-2 focus:ring-sky-500 outline-none" placeholder="לדוגמא: קסטרו, תן ביס...">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 mb-1">תיאור (חובה)</label>
+                            <input type="text" id="vDescription" required class="w-full border border-gray-300 rounded-xl p-2 md:p-3 text-sm focus:ring-2 focus:ring-sky-500 outline-none" placeholder="לדוגמא: ארוחה זוגית, גיפטקארד...">
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 mb-1">קטגוריה</label>
+                            <select id="vCategory" class="w-full border border-gray-300 rounded-xl p-2 md:p-3 text-sm focus:ring-2 focus:ring-sky-500 outline-none bg-white"></select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 mb-1">הערות כלליות</label>
+                            <input type="text" id="vNotes" class="w-full border border-gray-300 rounded-xl p-2 md:p-3 text-sm focus:ring-2 focus:ring-sky-500 outline-none" placeholder="אופציונלי...">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 mb-1">שווי נוכחי (₪)</label>
+                            <input type="number" id="vValue" min="0" step="0.1" required class="w-full border border-gray-300 rounded-xl p-2 md:p-3 text-sm focus:ring-2 focus:ring-sky-500 outline-none" placeholder="0">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 mb-1">תוקף למימוש</label>
+                            <input type="date" id="vExpiry" required class="w-full border border-gray-300 rounded-xl p-2 md:p-3 text-sm focus:ring-2 focus:ring-sky-500 outline-none">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-1">נרכש מ / מועדון לקוחות</label>
+                        <select id="vPurchasedFrom" onchange="toggleFriendPhone()" class="w-full border border-gray-300 rounded-xl p-2 md:p-3 text-sm focus:ring-2 focus:ring-sky-500 outline-none bg-white"></select>
+                    </div>
+
+                    <div id="friendPhoneContainer" class="hidden">
+                        <label class="block text-xs font-medium text-gray-700 mb-1">טלפון של החבר</label>
+                        <div class="flex items-center border border-gray-300 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-sky-500 bg-white">
+                            <div class="bg-gray-100 p-2 md:p-3 text-gray-500"><i data-lucide="phone" class="w-4 h-4 md:w-5 md:h-5"></i></div>
+                            <input type="tel" id="vFriendPhone" dir="ltr" class="w-full p-2 md:p-3 text-sm outline-none text-left" placeholder="05X-XXXXXXX">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-1">מספר קופון / ברקוד (אופציונלי)</label>
+                        <input type="text" id="vBarcode" class="w-full border border-gray-300 rounded-xl p-2 md:p-3 text-sm focus:ring-2 focus:ring-sky-500 outline-none" placeholder="הזן מספר לסריקה בקופה">
+                    </div>
+                </form>
+            </div>
+            
+            <div class="p-3 md:p-4 border-t bg-gray-50 rounded-b-2xl flex gap-3">
+                <button id="saveVoucherBtn" onclick="saveVoucher()" class="flex-1 gradient-bg text-white py-2.5 md:py-3 rounded-xl font-bold text-sm hover:shadow-lg transition">שמור שובר</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: שימוש וניצול -->
+    <div id="useVoucherModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl w-full max-w-sm shadow-2xl modal-content">
+            <div class="p-3 md:p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-2xl">
+                <h3 class="text-base md:text-lg font-bold text-gray-800">ניצול שובר</h3>
+                <button onclick="closeUseModal()" class="text-gray-500 hover:text-gray-700 p-1">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-5 md:p-6 text-center">
+                <p class="text-sm text-gray-600 mb-1" id="useVoucherName">כמה ניצלת עכשיו מהשובר?</p>
+                <input type="hidden" id="useVoucherId">
+                <div class="flex items-center justify-center gap-2 mb-6">
+                    <span class="text-xl font-bold text-gray-700">₪</span>
+                    <input type="number" id="useAmount" min="0" class="w-28 md:w-32 text-center text-xl md:text-2xl font-bold border-b-2 border-sky-500 focus:outline-none p-1 md:p-2" placeholder="0">
+                </div>
+                <div class="flex gap-2 md:gap-3">
+                    <button onclick="markAsFullyUsed()" class="flex-1 bg-gray-200 text-gray-800 py-2 rounded-xl font-medium hover:bg-gray-300 transition text-xs md:text-sm">סומן כנוצל במלואו</button>
+                    <button onclick="updateVoucherBalance()" class="flex-1 gradient-bg text-white py-2 rounded-xl font-bold hover:shadow-lg transition text-xs md:text-sm">עדכן יתרה</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: הגדרות -->
+    <div id="settingsModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col shadow-2xl modal-content">
+            <div class="p-3 md:p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-2xl">
+                <h3 class="text-lg md:text-xl font-bold text-gray-800 flex items-center gap-2">
+                    <i data-lucide="settings" class="w-4 h-4 md:w-5 md:h-5"></i>
+                    הגדרות
+                </h3>
+                <button onclick="closeSettingsModal()" class="text-gray-500 hover:text-gray-700 p-1">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-4 overflow-y-auto space-y-5">
+                <!-- קטגוריות -->
+                <div>
+                    <h4 class="font-bold text-gray-700 border-b pb-1 mb-2 text-sm">ניהול קטגוריות</h4>
+                    <div class="flex gap-2 mb-2">
+                        <input type="text" id="newCategoryName" class="flex-1 border border-gray-300 rounded-lg p-1.5 md:p-2 text-xs md:text-sm focus:border-sky-500 outline-none" placeholder="קטגוריה חדשה">
+                        <button onclick="addCategory()" class="bg-sky-500 text-white px-3 md:px-4 rounded-lg text-xs md:text-sm hover:bg-sky-600">הוסף</button>
+                    </div>
+                    <ul id="categoriesList" class="space-y-1.5 max-h-32 overflow-y-auto pr-1"></ul>
+                </div>
+                <!-- מועדונים -->
+                <div>
+                    <h4 class="font-bold text-gray-700 border-b pb-1 mb-2 text-sm">ניהול מועדונים (נרכש מ..)</h4>
+                    <div class="flex gap-2 mb-2">
+                        <input type="text" id="newClubName" class="flex-1 border border-gray-300 rounded-lg p-1.5 md:p-2 text-xs md:text-sm focus:border-sky-500 outline-none" placeholder="מועדון חדש">
+                        <button onclick="addClub()" class="bg-sky-500 text-white px-3 md:px-4 rounded-lg text-xs md:text-sm hover:bg-sky-600">הוסף</button>
+                    </div>
+                    <ul id="clubsList" class="space-y-1.5 max-h-32 overflow-y-auto pr-1"></ul>
+                </div>
+                <!-- גיבוי ואבטחה -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <h4 class="font-bold text-gray-700 border-b pb-1 mb-2 text-sm">גיבוי נתונים</h4>
+                        <div class="flex flex-col gap-2">
+                            <button onclick="exportBackup()" class="bg-blue-50 text-blue-700 border border-blue-200 py-1.5 rounded-lg flex items-center justify-center gap-1 text-xs md:text-sm">
+                                <i data-lucide="download" class="w-3 h-3 md:w-4 md:h-4"></i> גיבוי לקובץ
+                            </button>
+                            <label class="bg-green-50 text-green-700 border border-green-200 py-1.5 rounded-lg flex items-center justify-center gap-1 text-xs md:text-sm cursor-pointer">
+                                <i data-lucide="upload" class="w-3 h-3 md:w-4 md:h-4"></i> שחזור מגיבוי
+                                <input type="file" id="importBackupFile" accept=".json" class="hidden" onchange="importBackup(event)">
+                            </label>
+                        </div>
+                    </div>
+                    <div>
+                        <h4 class="font-bold text-gray-700 border-b pb-1 mb-2 text-sm">אבטחה</h4>
+                        <div class="flex items-center justify-between bg-gray-50 p-2 rounded-lg border">
+                            <div>
+                                <p class="font-medium text-xs md:text-sm">קוד (PIN)</p>
+                            </div>
+                            <button id="pinToggleBtn" onclick="togglePin()" class="bg-gray-200 text-gray-700 px-2 py-1 md:px-3 md:py-1.5 rounded text-xs font-medium">הפעל</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- טעינת סקריפטים בסוף כפי שמקובל למניעת תקיעות -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // ==========================================
+        // 1. הגדרות מפתחות
+        // ==========================================
+        const geminiApiKey = "AIzaSyBuH1A6Bst9uUHHqD2tZhKlAmIHZJmJFfY"; 
+        
+        const myFirebaseConfig = {
+            apiKey: "AIzaSyACAM1Mhr6-KLwYCW3I_ednQgUpp-3j6LA",
+            authDomain: "couponet---shai.firebaseapp.com",
+            projectId: "couponet---shai",
+            storageBucket: "couponet---shai.firebasestorage.app",
+            messagingSenderId: "471863911680",
+            appId: "1:471863911680:web:9a1045368dbcc1229b7fe5"
+        };
+        
+        const appUserId = 'user_shai_001'; 
+        // ==========================================
+
+        const STORAGE_KEY = 'couponet_data_v2'; 
+        let state = {
+            vouchers: [], 
+            categories: ["הכל", "מסעדות", "ביגוד", "כרטיסי מתנה", "פנאי", "רשתות שיווק", "כרטיסי כניסה"],
+            clubs: ["אחר", "חבר", "בהצדעה", "ביחד בשבילך", "מועדון שלך", "קרנות השוטרים", "מפעל הפיס", "BuyMe", "נופשונית", "Max", "ישראכרט", "נרכש מחבר"],
+            currentFilter: "הכל", 
+            currentBusinessFilter: "הכל",
+            searchQuery: "",
+            sortMode: "smart-default", 
+            pinCode: null,
+            categoryMemory: {} 
+        };
+        
+        let db, auth, currentUser, unsubscribeSnapshot;
+        let sessionUnlocked = false;
+
+        // פונקציית עזר ליצירת אייקונים
+        window.updateIcons = function() {
+            try { if (typeof lucide !== 'undefined') lucide.createIcons(); } catch(e) {}
+        }
+
+        // מערכת הודעות
+        const Dialog = {
+            show: function(title, message, type, callback) {
+                document.getElementById('customDialog').classList.remove('hidden');
+                document.getElementById('dialogTitle').innerText = title;
+                document.getElementById('dialogMessage').innerText = message;
+                const inputContainer = document.getElementById('dialogInputContainer');
+                const input = document.getElementById('dialogInput');
+                const btnCancel = document.getElementById('dialogBtnCancel');
+                const btnOK = document.getElementById('dialogBtnOK');
+                
+                inputContainer.classList.add('hidden'); btnCancel.classList.add('hidden'); input.value = '';
+                
+                const newBtnOK = btnOK.cloneNode(true); btnOK.parentNode.replaceChild(newBtnOK, btnOK);
+                const newBtnCancel = btnCancel.cloneNode(true); btnCancel.parentNode.replaceChild(newBtnCancel, btnCancel);
+
+                if (type === 'prompt') { inputContainer.classList.remove('hidden'); btnCancel.classList.remove('hidden'); setTimeout(() => document.getElementById('dialogInput').focus(), 100); }
+                else if (type === 'confirm') { btnCancel.classList.remove('hidden'); }
+
+                document.getElementById('dialogBtnOK').onclick = () => { document.getElementById('customDialog').classList.add('hidden'); if(callback) callback(type === 'prompt' ? document.getElementById('dialogInput').value : true); };
+                document.getElementById('dialogBtnCancel').onclick = () => { document.getElementById('customDialog').classList.add('hidden'); if(callback) callback(type === 'prompt' ? null : false); };
+            },
+            alert: function(msg) { this.show('הודעה', msg, 'alert'); },
+            confirm: function(msg, cb) { this.show('אישור', msg, 'confirm', cb); },
+            prompt: function(msg, cb) { this.show('הזנת נתונים', msg, 'prompt', cb); }
+        };
+
+        window.updateCloudStatus = function(msg, isOk) {
+            const el = document.getElementById('cloudStatus');
+            if(el) { 
+                el.innerHTML = `<i data-lucide="${isOk?'cloud-check':'cloud-off'}" class="w-3 h-3"></i> ${msg}`; 
+                window.updateIcons(); 
+            }
+        }
+
+        // טעינה מקומית מיידית
+        function loadLocalData() {
+            try {
+                const local = localStorage.getItem(STORAGE_KEY);
+                if (local) {
+                    const data = JSON.parse(local);
+                    if (data.vouchers) state.vouchers = data.vouchers;
+                    if (data.categories) state.categories = data.categories;
+                    if (data.clubs) state.clubs = data.clubs;
+                    if (data.pinCode) state.pinCode = data.pinCode;
+                    if (data.sortMode) state.sortMode = data.sortMode;
+                    if (data.categoryMemory) state.categoryMemory = data.categoryMemory;
+                }
+            } catch(e) { console.error("Error reading local state"); }
+            
+            // ציור המסך מיד!
+            renderApp();
+            
+            // הסרת מסך הטעינה הראשי
+            setTimeout(() => {
+                const loader = document.getElementById('startupLoader');
+                if(loader) {
+                    loader.style.opacity = '0';
+                    setTimeout(() => loader.remove(), 500);
+                }
+            }, 100);
+        }
+
+        // אתחול Firebase ברקע
+        async function initFirebase() {
+            try {
+                const app = initializeApp(myFirebaseConfig);
+                auth = getAuth(app); 
+                db = getFirestore(app);
+                
+                await signInAnonymously(auth);
+                
+                onAuthStateChanged(auth, (user) => {
+                    if (user) { 
+                        currentUser = user; 
+                        setupRealtimeSync(); 
+                    } else { 
+                        currentUser = null; 
+                        if (unsubscribeSnapshot) unsubscribeSnapshot(); 
+                    }
+                });
+            } catch(e) {
+                window.updateCloudStatus("שגיאת התחברות לענן", false);
+                if (state.pinCode && !sessionUnlocked) checkPinLock();
+            }
+        }
+
+        function setupRealtimeSync() {
+            if (!currentUser) return;
+            const dataDocRef = doc(db, 'couponet_users', appUserId);
+            window.updateCloudStatus("מתחבר...", true);
+            
+            unsubscribeSnapshot = onSnapshot(dataDocRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    
+                    if ((!data.vouchers || data.vouchers.length === 0) && state.vouchers.length > 0) {
+                        saveData(true); 
+                        return;
+                    }
+
+                    state.vouchers = data.vouchers || [];
+                    if(data.categories && data.categories.length) state.categories = data.categories;
+                    if(!state.categories.includes("הכל")) state.categories.unshift("הכל");
+                    if(data.clubs && data.clubs.length) state.clubs = data.clubs;
+                    if(!state.clubs.includes("נרכש מחבר")) state.clubs.push("נרכש מחבר");
+                    if(!state.clubs.includes("אחר")) state.clubs.unshift("אחר");
+                    state.pinCode = data.pinCode || null;
+                    if(data.sortMode) state.sortMode = data.sortMode;
+                    state.categoryMemory = data.categoryMemory || {};
+                    
+                    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch(e) {}
+                } else {
+                    if (state.vouchers.length > 0 || state.categories.length > 6) { saveData(true); }
+                }
+                
+                window.updateCloudStatus("מסונכרן בענן", true);
+                if (state.pinCode && !sessionUnlocked) checkPinLock();
+                renderApp();
+            }, (error) => { 
+                window.updateCloudStatus("שגיאת סנכרון", false); 
+            });
+        }
+
+        async function saveData(silent = false) {
+            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch(e) {}
+
+            if (!currentUser) return;
+            if (!silent) window.updateCloudStatus("שומר...", true);
+            
+            const dataDocRef = doc(db, 'couponet_users', appUserId);
+            try { 
+                await setDoc(dataDocRef, { 
+                    vouchers: state.vouchers, 
+                    categories: state.categories, 
+                    clubs: state.clubs, 
+                    sortMode: state.sortMode, 
+                    pinCode: state.pinCode, 
+                    categoryMemory: state.categoryMemory 
+                }); 
+                if (!silent) window.updateCloudStatus("מסונכרן בענן", true);
+            } 
+            catch(e) { 
+                window.updateCloudStatus("שגיאת שמירה", false); 
+                console.error(e);
+            }
+        }
+
+        // --- Helpers ---
+        function generateId() { return Date.now().toString(36) + Math.random().toString(36).substr(2); }
+        function getDaysUntil(dateString) {
+            if(!dateString) return -999;
+            const expiry = new Date(dateString); expiry.setHours(23, 59, 59, 999);
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            return Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
+        }
+        function formatDate(dateString) {
+            if(!dateString) return 'ללא תוקף';
+            const parts = dateString.split('-');
+            return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : dateString;
+        }
+        function getSortPriority(v) {
+            const days = getDaysUntil(v.expiryDate);
+            if (days < 0) return 4; 
+            if (days <= 60) return 1; 
+            if (v.purchasedFrom === 'נרכש מחבר') return 2; 
+            return 3; 
+        }
+
+        // --- Render UI ---
+        function renderApp() {
+            renderSummary();
+            renderCategories();
+            renderBusinessFilter();
+            renderVouchers();
+            
+            const archiveBanner = document.getElementById('archiveBanner');
+            if(state.currentFilter === 'archive') { archiveBanner.classList.remove('hidden'); archiveBanner.classList.add('flex'); }
+            else { archiveBanner.classList.add('hidden'); archiveBanner.classList.remove('flex'); }
+            
+            const archiveBtn = document.getElementById('archiveBtnHeader');
+            const usedCount = state.vouchers.filter(v => v.isUsed).length;
+            if(usedCount > 0 && state.currentFilter !== 'archive') {
+                archiveBtn.innerHTML = `<i data-lucide="archive" class="w-4 h-4 md:w-5 md:h-5"></i><span class="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 border-2 border-[#0ea5e9] rounded-full"></span>`;
+            } else {
+                archiveBtn.innerHTML = `<i data-lucide="archive" class="w-4 h-4 md:w-5 md:h-5"></i>`;
+            }
+            
+            const sortSelect = document.getElementById('sortSelect');
+            if(sortSelect && state.sortMode) sortSelect.value = state.sortMode;
+
+            window.updateIcons();
+        }
+
+        function renderSummary() {
+            let total = 0, expEndOfMonth = 0, expTwoMonths = 0;
+            const today = new Date();
+            const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
+
+            state.vouchers.forEach(v => {
+                if (v.isUsed) return;
+                total += parseFloat(v.value) || 0;
+                if (v.expiryDate) {
+                    const days = getDaysUntil(v.expiryDate);
+                    if (days >= 0) { 
+                        const expDate = new Date(v.expiryDate);
+                        expDate.setHours(23, 59, 59, 999);
+                        
+                        if (expDate <= endOfMonth) {
+                            expEndOfMonth++;
+                        }
+                        if (days <= 60) {
+                            expTwoMonths++;
+                        }
+                    }
+                }
+            });
+            document.getElementById('totalValue').innerText = total.toLocaleString('he-IL', {minimumFractionDigits: 0, maximumFractionDigits: 1});
+            document.getElementById('expiringEndOfMonthCount').innerText = expEndOfMonth;
+            document.getElementById('expiringTwoMonthsCount').innerText = expTwoMonths;
+        }
+
+        function renderCategories() {
+            const container = document.getElementById('categoriesContainer');
+            if(!container) return;
+            container.innerHTML = '';
+            state.categories.forEach(cat => {
+                const isSelected = state.currentFilter === cat;
+                const btn = document.createElement('button');
+                btn.className = isSelected ? "px-4 py-1.5 md:py-2 rounded-full whitespace-nowrap text-xs md:text-sm font-bold gradient-bg text-white shadow-md transition" : "px-4 py-1.5 md:py-2 rounded-full whitespace-nowrap text-xs md:text-sm font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 transition";
+                btn.innerText = cat;
+                btn.onclick = () => setFilter(cat);
+                container.appendChild(btn);
+            });
+        }
+
+        function renderBusinessFilter() {
+            const select = document.getElementById('businessSelect');
+            if(!select) return;
+            const currentVal = state.currentBusinessFilter;
+            
+            const uniqueBusinesses = [...new Set(state.vouchers.map(v => (v.name || '').trim()).filter(n => n !== ''))];
+            uniqueBusinesses.sort((a, b) => a.localeCompare(b, 'he'));
+            
+            select.innerHTML = '<option value="הכל">כל בתי העסק</option>';
+            uniqueBusinesses.forEach(biz => {
+                const opt = document.createElement('option');
+                opt.value = biz;
+                opt.innerText = biz;
+                select.appendChild(opt);
+            });
+            
+            if (uniqueBusinesses.includes(currentVal)) { select.value = currentVal; } 
+            else { select.value = "הכל"; state.currentBusinessFilter = "הכל"; }
+        }
+
+        window.setFilter = function(filterName) { state.currentFilter = filterName; renderApp(); }
+        window.setBusinessFilter = function(businessName) { state.currentBusinessFilter = businessName; renderApp(); }
+        window.setSortMode = function(mode) { state.sortMode = mode; saveData(); renderApp(); }
+
+        window.setSearchQuery = function(query) {
+            state.searchQuery = query.toLowerCase().trim();
+            const clearBtn = document.getElementById('clearSearchBtn');
+            if(state.searchQuery) clearBtn.classList.remove('hidden');
+            else clearBtn.classList.add('hidden');
+            renderVouchers();
+        }
+
+        window.clearSearch = function() {
+            document.getElementById('searchInput').value = '';
+            window.setSearchQuery('');
+        }
+
+        function renderVouchers() {
+            const grid = document.getElementById('vouchersGrid');
+            const emptyState = document.getElementById('emptyState');
+            if(!grid || !emptyState) return;
+            grid.innerHTML = '';
+
+            let filtered = state.vouchers.filter(v => {
+                const isItemUsed = !!v.isUsed;
+                if (state.currentFilter === 'archive') return isItemUsed;
+                if (isItemUsed) return false; 
+                
+                const days = v.expiryDate ? getDaysUntil(v.expiryDate) : 999;
+                let categoryMatch = false;
+                
+                if (state.currentFilter === 'הכל') {
+                    categoryMatch = true;
+                } else if (state.currentFilter === 'expiring-two-months') {
+                    categoryMatch = days >= 0 && days <= 60;
+                } else if (state.currentFilter === 'expiring-end-of-month') {
+                    const today = new Date();
+                    const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
+                    const expDate = v.expiryDate ? new Date(v.expiryDate) : null;
+                    if(expDate) expDate.setHours(23, 59, 59, 999);
+                    categoryMatch = days >= 0 && expDate && expDate <= endOfMonth;
+                } else {
+                    categoryMatch = v.category === state.currentFilter;
+                }
+
+                let businessMatch = true;
+                if (state.currentBusinessFilter !== 'הכל') {
+                    businessMatch = (v.name || '').trim() === state.currentBusinessFilter;
+                }
+
+                let searchMatch = true;
+                if (state.searchQuery) {
+                    const searchStr = `${v.name||''} ${v.description||''} ${v.notes||''} ${v.category||''} ${v.purchasedFrom||''} ${v.barcode||''}`.toLowerCase();
+                    searchMatch = searchStr.includes(state.searchQuery);
+                }
+
+                return categoryMatch && businessMatch && searchMatch;
+            });
+
+            filtered.sort((a, b) => {
+                const aDays = a.expiryDate ? getDaysUntil(a.expiryDate) : 999;
+                const bDays = b.expiryDate ? getDaysUntil(b.expiryDate) : 999;
+                const aExpired = aDays < 0, bExpired = bDays < 0;
+
+                if (state.sortMode === 'smart-default') {
+                    const prioA = getSortPriority(a);
+                    const prioB = getSortPriority(b);
+                    if (prioA !== prioB) return prioA - prioB; 
+                    return aDays - bDays; 
+                }
+
+                if (aExpired && !bExpired) return 1;
+                if (!aExpired && bExpired) return -1;
+
+                switch (state.sortMode) {
+                    case 'expiry-asc': return aDays - bDays;
+                    case 'expiry-desc': return (aExpired && bExpired) ? bDays - aDays : bDays - aDays;
+                    case 'value-desc': return (parseFloat(b.value)||0) - (parseFloat(a.value)||0);
+                    case 'value-asc': return (parseFloat(a.value)||0) - (parseFloat(b.value)||0);
+                    case 'name-asc': return (a.name||'').localeCompare(b.name||'', 'he');
+                    case 'category': 
+                        const catCompare = (a.category||'').localeCompare(b.category||'', 'he');
+                        return catCompare !== 0 ? catCompare : (aDays - bDays);
+                    default: return aDays - bDays;
+                }
+            });
+
+            if (filtered.length === 0) {
+                emptyState.classList.remove('hidden');
+                
+                if (state.searchQuery) {
+                    document.getElementById('emptyStateTitle').innerText = 'לא נמצאו תוצאות';
+                    document.getElementById('emptyStateDesc').innerText = `לא נמצאו שוברים התואמים לחיפוש שלך.`;
+                    document.getElementById('recoverySection').classList.add('hidden');
+                } else {
+                    document.getElementById('emptyStateTitle').innerText = state.currentFilter === 'archive' ? 'הארכיון ריק' : 'אין שוברים להצגה';
+                    document.getElementById('emptyStateDesc').innerText = state.currentFilter === 'archive' ? 'לא נוצלו עדיין שוברים במלואם.' : 'לחץ על כפתור הפלוס למטה כדי להוסיף שובר.';
+                    document.getElementById('recoverySection').classList.toggle('hidden', state.currentFilter === 'archive');
+                }
+            } else {
+                emptyState.classList.add('hidden');
+                filtered.forEach(v => {
+                    const isArchived = !!v.isUsed;
+                    const val = parseFloat(v.value) || 0;
+                    
+                    if (typeof v.originalValue === 'undefined') {
+                        v.originalValue = val; 
+                    }
+                    const originalVal = parseFloat(v.originalValue) || val;
+
+                    const daysUntil = v.expiryDate ? getDaysUntil(v.expiryDate) : 999;
+                    const expired = daysUntil < 0 && !isArchived;
+                    
+                    let statusBadge = '';
+                    let cardOpacity = expired || isArchived ? 'opacity-60 grayscale-[0.3]' : '';
+                    let headerColor = expired || isArchived ? 'bg-gray-400' : 'bg-sky-500';
+
+                    if (isArchived) {
+                        statusBadge = `<span class="bg-gray-200 text-gray-700 text-[10px] md:text-xs font-bold px-2 py-0.5 rounded-full absolute top-3 left-3 border border-gray-300">בארכיון</span>`;
+                    } else if (expired) {
+                        statusBadge = `<span class="bg-red-100 text-red-800 text-[10px] md:text-xs font-bold px-2 py-0.5 rounded-full absolute top-3 left-3 border border-red-200">פג תוקף</span>`;
+                    } else if (daysUntil <= 60) {
+                        const today = new Date();
+                        const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
+                        const expDate = v.expiryDate ? new Date(v.expiryDate) : null;
+                        if(expDate) expDate.setHours(23, 59, 59, 999);
+                        
+                        const isEndOfMonth = expDate && expDate <= endOfMonth;
+                        
+                        const badgeColorClass = isEndOfMonth ? 'bg-red-100 text-red-800 border-red-200' : 'bg-orange-100 text-orange-800 border-orange-200';
+                        const iconType = isEndOfMonth ? 'alert-circle' : 'clock';
+                        const badgeText = isEndOfMonth ? `פג בעוד ${daysUntil} ימים (החודש!)` : `פג בעוד ${daysUntil} ימים`;
+                        
+                        statusBadge = `<span class="${badgeColorClass} text-[10px] md:text-xs font-bold px-2 py-0.5 rounded-full absolute top-3 left-3 flex items-center gap-1 border"><i data-lucide="${iconType}" class="w-3 h-3"></i> ${badgeText}</span>`;
+                    }
+                    
+                    let metaText = v.category || 'ללא קטגוריה';
+                    if (v.purchasedFrom && v.purchasedFrom !== 'אחר') metaText += ` • ${v.purchasedFrom}`;
+
+                    const descText = v.description ? `<p class="text-sm md:text-base font-medium text-sky-700 mb-1 pr-6 sm:pr-0 truncate" title="${v.description}">${v.description}</p>` : '';
+
+                    const card = document.createElement('div');
+                    card.className = `voucher-card flex flex-col ${cardOpacity}`;
+                    
+                    let actionsHtml = '';
+                    if (isArchived) {
+                        actionsHtml = `
+                            <button onclick="restoreVoucher('${v.id}')" class="bg-blue-100 text-blue-700 hover:bg-blue-200 flex-1 py-1.5 rounded-lg font-bold text-xs transition flex items-center justify-center gap-1">
+                                <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> שחזר לארנק
+                            </button>
+                            <button onclick="deleteVoucher('${v.id}', true)" class="bg-red-100 text-red-600 hover:bg-red-200 p-1.5 rounded-lg transition" title="מחק סופית">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                        `;
+                    } else {
+                        actionsHtml = `
+                            <button onclick="openUseModal('${v.id}')" ${expired ? 'disabled' : ''} class="${expired ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-green-100 text-green-700 hover:bg-green-200'} flex-1 py-1.5 rounded-lg font-bold text-xs md:text-sm transition flex items-center justify-center gap-1">
+                                <i data-lucide="check-circle" class="w-3.5 h-3.5 md:w-4 md:h-4"></i> ניצול
+                            </button>
+                            <button onclick="editVoucher('${v.id}')" class="bg-gray-100 text-gray-600 hover:bg-gray-200 p-1.5 md:p-2 rounded-lg transition">
+                                <i data-lucide="edit-2" class="w-3.5 h-3.5 md:w-4 md:h-4"></i>
+                            </button>
+                            <button onclick="deleteVoucher('${v.id}', false)" class="bg-red-50 text-red-600 hover:bg-red-100 p-1.5 md:p-2 rounded-lg transition">
+                                <i data-lucide="trash-2" class="w-3.5 h-3.5 md:w-4 md:h-4"></i>
+                            </button>
+                        `;
+                    }
+
+                    let valueDisplayHtml = '';
+                    if (originalVal > val && !isArchived) {
+                        const percent = originalVal > 0 ? Math.round((val / originalVal) * 100) : 0;
+                        valueDisplayHtml = `
+                            <div>
+                                <p class="text-[10px] text-gray-500 uppercase tracking-wider mb-0.5">יתרה / מקור</p>
+                                <p class="text-lg font-bold text-sky-600 leading-none">₪${val.toLocaleString('he-IL')} <span class="text-xs text-gray-400 font-normal line-through ml-1">₪${originalVal.toLocaleString('he-IL')}</span></p>
+                                <div class="w-full bg-gray-200 rounded-full h-1 mt-1.5">
+                                    <div class="bg-sky-500 h-1 rounded-full" style="width: ${percent}%"></div>
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        valueDisplayHtml = `
+                            <div>
+                                <p class="text-[10px] text-gray-500 uppercase tracking-wider mb-0.5">יתרה</p>
+                                <p class="text-xl md:text-2xl font-bold text-sky-600 flex items-end leading-none">
+                                    <span class="text-sm mr-1 mb-0.5">₪</span>${val.toLocaleString('he-IL')}
+                                </p>
+                            </div>
+                        `;
+                    }
+
+                    card.innerHTML = `
+                        <div class="${headerColor} h-1.5 md:h-2"></div>
+                        <div class="p-3 md:p-4 relative">
+                            ${statusBadge}
+                            <div class="text-[10px] md:text-xs text-gray-500 font-medium mb-1 pt-6 sm:pt-0">${metaText}</div>
+                            <h3 class="text-xl md:text-2xl font-bold text-gray-900 mb-0.5 pr-6 sm:pr-0 leading-tight truncate" title="${v.name}">${v.name}</h3>
+                            ${descText}
+                            ${v.notes ? `<p class="text-[10px] md:text-xs text-gray-500 mb-1 truncate">${v.notes}</p>` : ''}
+                            ${v.friendPhone && v.purchasedFrom === 'נרכש מחבר' ? `<p class="text-[10px] md:text-xs text-sky-600 mb-1"><i data-lucide="phone" class="w-3 h-3 inline"></i> ${v.friendPhone}</p>` : ''}
+                            
+                            <div class="flex justify-between items-end mt-3">
+                                ${valueDisplayHtml}
+                                <div class="text-left">
+                                    <p class="text-[10px] text-gray-500 uppercase tracking-wider mb-0.5">בתוקף עד</p>
+                                    <p class="text-xs md:text-sm font-semibold text-gray-800">${formatDate(v.expiryDate)}</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="voucher-divider"></div>
+                        <div class="p-2.5 md:p-3 bg-gray-50/50 flex flex-col items-center justify-between flex-1">
+                            ${v.barcode && !isArchived ? `
+                                <div class="w-full flex justify-center mb-3 bg-white p-1 rounded border border-gray-100">
+                                    <svg class="barcode" jsbarcode-format="CODE128" jsbarcode-value="${v.barcode}" jsbarcode-textmargin="0" jsbarcode-height="30" jsbarcode-width="1.2" jsbarcode-fontsize="10" jsbarcode-background="transparent" jsbarcode-linecolor="#1f2937"></svg>
+                                </div>
+                            ` : `<div class="h-2"></div>`}
+                            <div class="flex gap-2 w-full mt-auto">${actionsHtml}</div>
+                        </div>
+                    `;
+                    grid.appendChild(card);
+                });
+                
+                try { if (typeof JsBarcode !== 'undefined') JsBarcode(".barcode").init(); } catch(e) {}
+                window.updateIcons();
+            }
+        }
+
+        window.openVoucherModal = function(id = null) {
+            document.getElementById('voucherForm').reset();
+            document.getElementById('friendPhoneContainer').classList.add('hidden');
+            
+            const catSel = document.getElementById('vCategory'); catSel.innerHTML = '';
+            state.categories.filter(c=>c!=='הכל').forEach(c => catSel.innerHTML += `<option value="${c}">${c}</option>`);
+            const clubSel = document.getElementById('vPurchasedFrom'); clubSel.innerHTML = '';
+            state.clubs.forEach(c => clubSel.innerHTML += `<option value="${c}">${c}</option>`);
+
+            if (id) {
+                document.getElementById('modalTitle').innerText = 'עריכת שובר';
+                const v = state.vouchers.find(v => v.id === id);
+                if (v) {
+                    document.getElementById('voucherId').value = v.id;
+                    document.getElementById('vName').value = v.name || '';
+                    document.getElementById('vDescription').value = v.description || '';
+                    document.getElementById('vCategory').value = v.category || '';
+                    document.getElementById('vNotes').value = v.notes || '';
+                    document.getElementById('vValue').value = v.value || '';
+                    document.getElementById('vExpiry').value = v.expiryDate || '';
+                    if(v.purchasedFrom) document.getElementById('vPurchasedFrom').value = v.purchasedFrom;
+                    if(v.friendPhone) document.getElementById('vFriendPhone').value = v.friendPhone;
+                    document.getElementById('vBarcode').value = v.barcode || '';
+                    toggleFriendPhone();
+                }
+            } else {
+                document.getElementById('modalTitle').innerText = 'הוספת שובר חדש';
+                document.getElementById('voucherId').value = '';
+                
+                const nextYear = new Date(); nextYear.setFullYear(nextYear.getFullYear() + 1);
+                document.getElementById('vExpiry').value = nextYear.toISOString().split('T')[0];
+                if(state.currentFilter !== 'הכל' && !state.currentFilter.startsWith('expiring') && state.currentFilter !== 'archive') {
+                    document.getElementById('vCategory').value = state.currentFilter;
+                }
+            }
+            
+            document.getElementById('voucherModal').classList.remove('hidden');
+            const content = document.querySelector('#voucherModal .modal-content');
+            content.classList.remove('modal-enter-active'); content.classList.add('modal-enter');
+            setTimeout(() => { content.classList.remove('modal-enter'); content.classList.add('modal-enter-active'); }, 10);
+        }
+
+        window.closeVoucherModal = function() { document.getElementById('voucherModal').classList.add('hidden'); }
+
+        window.saveVoucher = function() {
+            const name = document.getElementById('vName').value.trim();
+            const desc = document.getElementById('vDescription').value.trim();
+            const val = parseFloat(document.getElementById('vValue').value) || 0;
+            const expDate = document.getElementById('vExpiry').value;
+            const category = document.getElementById('vCategory').value;
+            const barcode = document.getElementById('vBarcode').value.trim();
+            const id = document.getElementById('voucherId').value;
+            const purchasedFrom = document.getElementById('vPurchasedFrom').value;
+
+            if (!name) { Dialog.alert("יש להזין בית עסק"); return; }
+            if (!desc) { Dialog.alert("יש להזין תיאור / סוג שובר"); return; }
+            if (val <= 0) { Dialog.alert("יש להזין שווי תקין"); return; }
+            if (!expDate) { Dialog.alert("יש להזין תאריך תוקף"); return; }
+
+            const isDuplicate = state.vouchers.some(v => v.id !== id && !v.isUsed && (
+                (barcode && v.barcode === barcode) ||
+                (v.name === name && v.description === desc && v.value === val && v.expiryDate === expDate)
+            ));
+
+            if (isDuplicate) {
+                Dialog.alert('שים לב: שובר זהה לחלוטין (או בעל אותו ברקוד) כבר קיים אצלך בארנק הפעיל!');
+                return;
+            }
+
+            if (name && category) {
+                if (!state.categoryMemory) state.categoryMemory = {};
+                state.categoryMemory[name.toLowerCase()] = category;
+            }
+            
+            const voucherData = {
+                id: id || generateId(),
+                name: name,
+                description: desc,
+                category: category,
+                notes: document.getElementById('vNotes').value.trim(),
+                value: val,
+                originalValue: id ? (state.vouchers.find(v=>v.id===id).originalValue || val) : val,
+                expiryDate: expDate,
+                purchasedFrom: purchasedFrom,
+                friendPhone: purchasedFrom === 'נרכש מחבר' ? document.getElementById('vFriendPhone').value.trim() : '',
+                barcode: barcode,
+                isUsed: false,
+                dateAdded: id ? state.vouchers.find(v=>v.id===id).dateAdded : new Date().toISOString()
+            };
+
+            if (id) {
+                const index = state.vouchers.findIndex(v => v.id === id);
+                if (index !== -1) state.vouchers[index] = { ...state.vouchers[index], ...voucherData };
+            } else {
+                state.vouchers.push(voucherData);
+            }
+
+            saveData();
+            closeVoucherModal();
+        }
+
+        window.editVoucher = function(id) { openVoucherModal(id); }
+        
+        window.deleteVoucher = function(id, isArchived = false) {
+            if (isArchived) {
+                Dialog.confirm('מחיקה זו מהארכיון היא סופית לחלוטין. האם אתה בטוח?', (yes) => {
+                    if(yes) {
+                        state.vouchers = state.vouchers.filter(v => v.id !== id);
+                        saveData();
+                    }
+                });
+            } else {
+                Dialog.confirm('האם להעביר את השובר הזה לארכיון?', (yes) => {
+                    if(yes) {
+                        const v = state.vouchers.find(v => v.id === id);
+                        if(v) {
+                            v.isUsed = true;
+                            saveData();
+                        }
+                    }
+                });
+            }
+        }
+        
+        window.restoreVoucher = function(id) {
+            const v = state.vouchers.find(v => v.id === id);
+            if(v) {
+                v.isUsed = false;
+                saveData();
+            }
+        }
+
+        window.toggleFriendPhone = function() {
+            const isFriend = document.getElementById('vPurchasedFrom').value === 'נרכש מחבר';
+            document.getElementById('friendPhoneContainer').classList.toggle('hidden', !isFriend);
+            if(!isFriend) document.getElementById('vFriendPhone').value = '';
+        }
+
+        window.openUseModal = function(id) {
+            const v = state.vouchers.find(v => v.id === id);
+            if(!v) return;
+            
+            document.getElementById('useVoucherId').value = id;
+            document.getElementById('useAmount').value = '';
+            document.getElementById('useVoucherName').innerText = `כמה ניצלת עכשיו מתוך ${v.name}?`;
+            
+            document.getElementById('useVoucherModal').classList.remove('hidden');
+            setTimeout(() => document.getElementById('useAmount').focus(), 100);
+        }
+        
+        window.closeUseModal = function() { document.getElementById('useVoucherModal').classList.add('hidden'); }
+
+        window.updateVoucherBalance = function() {
+            const id = document.getElementById('useVoucherId').value;
+            const amountUsed = parseFloat(document.getElementById('useAmount').value);
+            if (isNaN(amountUsed) || amountUsed <= 0) { Dialog.alert('נא להזין סכום תקין'); return; }
+
+            const v = state.vouchers.find(v => v.id === id);
+            if (!v) return;
+
+            if (amountUsed >= v.value) {
+                v.isUsed = true;
+                v.value = 0; 
+            } else {
+                v.value -= amountUsed;
+            }
+
+            saveData();
+            closeUseModal();
+        }
+
+        window.markAsFullyUsed = function() {
+            const id = document.getElementById('useVoucherId').value;
+            const v = state.vouchers.find(v => v.id === id);
+            if(v) {
+                v.isUsed = true;
+                v.value = 0;
+                saveData();
+                closeUseModal();
+            }
+        }
+
+        window.importBackup = function(e) { 
+            const f=e.target.files[0]; 
+            if(!f) return; 
+            const r=new FileReader(); 
+            r.onload=function(ev){ 
+                try {
+                    const d=JSON.parse(ev.target.result); 
+                    if(d.vouchers) {
+                        state.vouchers=d.vouchers; 
+                        if(d.categories)state.categories=d.categories; 
+                        if(d.clubs)state.clubs=d.clubs; 
+                        saveData(false); 
+                        Dialog.alert('הנתונים שוחזרו בהצלחה!'); 
+                        if(document.getElementById('settingsModal')) closeSettingsModal();
+                    } else Dialog.alert('קובץ לא תקין'); 
+                } catch(err) { Dialog.alert('שגיאה בקריאת הקובץ'); } 
+            }; 
+            r.readAsText(f); 
+        }
+
+        window.openSettingsModal = function() { renderSettingsCategories(); renderSettingsClubs(); updatePinToggleUI(); document.getElementById('settingsModal').classList.remove('hidden'); }
+        window.closeSettingsModal = function() { document.getElementById('settingsModal').classList.add('hidden'); }
+
+        function renderSettingsCategories() {
+            const list = document.getElementById('categoriesList'); list.innerHTML = '';
+            state.categories.forEach((cat, index) => {
+                if (cat === 'הכל') return;
+                const li = document.createElement('li'); li.className = "flex justify-between items-center bg-white border rounded-lg p-1.5 md:p-2";
+                li.innerHTML = `<span class="text-xs md:text-sm font-medium text-gray-700">${cat}</span>
+                    <div class="flex gap-1">
+                        <button onclick="moveCategory(${index}, -1)" class="p-1 text-gray-400 hover:text-gray-700" ${index===1?'disabled class="p-1 text-gray-200"':''}><i data-lucide="arrow-up" class="w-3.5 h-3.5 md:w-4 md:h-4"></i></button>
+                        <button onclick="moveCategory(${index}, 1)" class="p-1 text-gray-400 hover:text-gray-700" ${index===state.categories.length-1?'disabled class="p-1 text-gray-200"':''}><i data-lucide="arrow-down" class="w-3.5 h-3.5 md:w-4 md:h-4"></i></button>
+                        <button onclick="deleteCategory('${cat}')" class="p-1 text-red-400 hover:text-red-600 ml-1"><i data-lucide="trash-2" class="w-3.5 h-3.5 md:w-4 md:h-4"></i></button>
+                    </div>`;
+                list.appendChild(li);
+            });
+            window.updateIcons();
+        }
+        window.addCategory = function() { const v = document.getElementById('newCategoryName').value.trim(); if (v && !state.categories.includes(v)) { state.categories.push(v); document.getElementById('newCategoryName').value=''; saveData(); renderSettingsCategories(); } }
+        window.deleteCategory = function(cat) { Dialog.confirm(`למחוק את "${cat}"?`, (y)=>{if(y){ state.categories=state.categories.filter(c=>c!==cat); if(state.currentFilter===cat) state.currentFilter='הכל'; saveData(); renderSettingsCategories(); }}); }
+        window.moveCategory = function(i, d) { if(i+d<=0 || i+d>=state.categories.length) return; const t=state.categories[i]; state.categories[i]=state.categories[i+d]; state.categories[i+d]=t; saveData(); renderSettingsCategories(); }
+
+        function renderSettingsClubs() {
+            const list = document.getElementById('clubsList'); list.innerHTML = '';
+            state.clubs.forEach((club, index) => {
+                if (club==='אחר' || club==='נרכש מחבר') return;
+                const li = document.createElement('li'); li.className = "flex justify-between items-center bg-white border rounded-lg p-1.5 md:p-2";
+                li.innerHTML = `<span class="text-xs md:text-sm font-medium text-gray-700">${club}</span>
+                    <div class="flex gap-1">
+                        <button onclick="moveClub(${index}, -1)" class="p-1 text-gray-400 hover:text-gray-700" ${index<=1?'disabled class="p-1 text-gray-200"':''}><i data-lucide="arrow-up" class="w-3.5 h-3.5 md:w-4 md:h-4"></i></button>
+                        <button onclick="moveClub(${index}, 1)" class="p-1 text-gray-400 hover:text-gray-700" ${index>=state.clubs.length-2?'disabled class="p-1 text-gray-200"':''}><i data-lucide="arrow-down" class="w-3.5 h-3.5 md:w-4 md:h-4"></i></button>
+                        <button onclick="deleteClub('${club}')" class="p-1 text-red-400 hover:text-red-600 ml-1"><i data-lucide="trash-2" class="w-3.5 h-3.5 md:w-4 md:h-4"></i></button>
+                    </div>`;
+                list.appendChild(li);
+            });
+            window.updateIcons();
+        }
+        window.addClub = function() { const v = document.getElementById('newClubName').value.trim(); if(v && !state.clubs.includes(v)) { const i = state.clubs.indexOf('נרכש מחבר'); state.clubs.splice(i>-1?i:state.clubs.length,0,v); document.getElementById('newClubName').value=''; saveData(); renderSettingsClubs(); } }
+        window.deleteClub = function(club) { Dialog.confirm(`למחוק את "${club}"?`, (y)=>{if(y){ state.clubs=state.clubs.filter(c=>c!==club); saveData(); renderSettingsClubs(); }}); }
+        window.moveClub = function(i, d) { if(i+d<=0 || i+d>=state.clubs.length-1) return; const t=state.clubs[i]; state.clubs[i]=state.clubs[i+d]; state.clubs[i+d]=t; saveData(); renderSettingsClubs(); }
+
+        window.exportBackup = function() { const blob = new Blob([JSON.stringify({vouchers:state.vouchers, categories:state.categories, clubs:state.clubs})], {type:'application/json'}); const l=document.createElement("a"); l.href=URL.createObjectURL(blob); l.download=`couponet_backup.json`; l.click(); }
+        
+        window.exportToExcel = function() {
+            if(state.vouchers.length===0) return Dialog.alert('אין נתונים');
+            let csv = "\uFEFF" + ['שם בית עסק', 'תיאור השובר', 'שווי נוכחי', 'שווי מקורי', 'תוקף', 'קטגוריה', 'מועדון', 'הערות'].join(',') + "\r\n";
+            state.vouchers.forEach(v => {
+                if(v.isUsed) return;
+                csv += [ `"${(v.name||'').replace(/"/g,'""')}"`, `"${(v.description||'').replace(/"/g,'""')}"`, (parseFloat(v.value)||0), (parseFloat(v.originalValue)||v.value||0), formatDate(v.expiryDate), v.category||'', `"${(v.purchasedFrom||'').replace(/"/g,'""')}"`, `"${(v.notes||'').replace(/"/g,'""')}"` ].join(',') + "\r\n";
+            });
+            const l=document.createElement("a"); l.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'})); l.download='coupons.csv'; l.click();
+        }
+        
+        function updatePinToggleUI() { const btn = document.getElementById('pinToggleBtn'); if(state.pinCode) { btn.innerText='בטל נעילה'; btn.className="bg-red-100 text-red-700 px-2 md:px-3 py-1 md:py-1.5 rounded text-xs font-medium"; } else { btn.innerText='הפעל'; btn.className="bg-gray-200 text-gray-700 px-2 md:px-3 py-1 md:py-1.5 rounded text-xs font-medium"; } }
+        window.togglePin = function() { if(state.pinCode) { Dialog.confirm('לבטל קוד גישה?', (y)=>{if(y){state.pinCode=null; sessionUnlocked=false; saveData(); updatePinToggleUI();}}); } else { Dialog.prompt('הזן קוד (4 ספרות):', (c)=>{if(c && c.length===4 && /^\d+$/.test(c)){state.pinCode=c; sessionUnlocked=true; saveData(); updatePinToggleUI(); Dialog.alert('קוד הופעל');}}); } }
+        function checkPinLock() { if(state.pinCode && !sessionUnlocked) { const s=document.getElementById('pinScreen'); if(s.classList.contains('hidden')){s.classList.remove('hidden'); setupPinInputs();} } }
+        function setupPinInputs() { const ins=document.querySelectorAll('.pin-input'); ins.forEach(i=>i.value=''); ins[0].focus(); document.getElementById('pinError').classList.add('hidden'); ins.forEach((inp, idx)=>{ inp.oninput=()=>{ if(inp.value.length===1 && idx<ins.length-1) ins[idx+1].focus(); checkPinComplete(); }; inp.onkeydown=(e)=>{if(e.key==='Backspace' && !inp.value && idx>0) ins[idx-1].focus();}; }); }
+        function checkPinComplete() { const ins=document.querySelectorAll('.pin-input'); let c=''; ins.forEach(i=>c+=i.value); if(c.length===4) { if(c===state.pinCode) { document.getElementById('pinScreen').classList.add('hidden'); sessionUnlocked=true; } else { document.getElementById('pinError').classList.remove('hidden'); ins.forEach(i=>{i.value=''; i.classList.add('border-red-500'); setTimeout(()=>i.classList.remove('border-red-500'),1000);}); ins[0].focus(); } } }
+
+        // AI 
+        async function extractVoucherData(text, base64Image = null, mimeType = null) {
+            const prompt = "Extract voucher/coupon details. Respond ONLY with JSON: 'name' (string, brand/store/network name), 'description' (string, what the voucher gives, e.g. 500 NIS gift card, couples breakfast, 10 entries), 'value' (number, amount), 'expiryDate' (string, YYYY-MM-DD, deduce year if missing, current is 2026), 'category' (string: מסעדות, ביגוד, כרטיסי מתנה, פנאי, רשתות שיווק, כרטיסי כניסה), 'purchasedFrom' (string, club like חבר, קרנות השוטרים etc.), 'barcode' (string).";
+            let parts = [{ text: prompt }];
+            if (base64Image) { parts.push({ inlineData: { mimeType: mimeType || "image/jpeg", data: base64Image.split(',')[1] } }); if(text) parts.push({text: "Additional text: " + text}); } 
+            else if (text) parts.push({ text: "Text: " + text });
+
+            const payload = { 
+                contents: [{ role: "user", parts: parts }], 
+                generationConfig: { 
+                    responseMimeType: "application/json"
+                } 
+            };
+            
+            const isCanvasEnvironment = typeof __app_id !== 'undefined';
+            
+            // ב-Netlify נשתמש אך ורק במודל הפלאש הציבורי שזמין לכולם עם המפתח שלך.
+            // הסרנו את ה-pro מהרשימה כדי שלא יסתיר שגיאות של המפתח עצמו.
+            const configsToTry = isCanvasEnvironment ? [
+                { model: 'gemini-2.5-flash-preview-09-2025', key: '' }
+            ] : [
+                { model: 'gemini-1.5-flash', key: geminiApiKey },
+                { model: 'gemini-1.5-flash-latest', key: geminiApiKey }
+            ];
+
+            let errorMessages = [];
+
+            for (const config of configsToTry) {
+                try {
+                    if (!isCanvasEnvironment && (!config.key || config.key.trim() === '')) {
+                        errorMessages.push(`[${config.model}] לא הוזן מפתח API של ג'מיני`);
+                        continue;
+                    }
+
+                    const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.key}`;
+                    const response = await fetch(url, { 
+                        method: 'POST', 
+                        headers: { 'Content-Type': 'application/json' }, 
+                        body: JSON.stringify(payload) 
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (response.ok && data.candidates && data.candidates.length > 0) {
+                        const rawText = data.candidates[0].content.parts[0].text;
+                        try {
+                            return JSON.parse(rawText);
+                        } catch (parseErr) {
+                            errorMessages.push(`[${config.model}] התשובה לא הייתה בפורמט JSON תקין.`);
+                            continue;
+                        }
+                    } else {
+                        // אוספים את הודעת השגיאה המדויקת מגוגל (למשל: המפתח לא תקין)
+                        errorMessages.push(`[${config.model}] ${data.error?.message || 'Server Error: ' + response.status}`);
+                    }
+                } catch(err) {
+                    errorMessages.push(`[${config.model}] ${err.message}`);
+                }
+            }
+            
+            // אם כל הנסיונות נכשלו, נציג לך בדיוק מה הייתה השגיאה המקורית של גוגל למפתח שלך!
+            throw new Error(errorMessages.join(" | "));
+        }
+
+        window.openSmartPaste = function() { const a=document.getElementById('smartPasteArea'); a.classList.toggle('hidden'); if(!a.classList.contains('hidden')) document.getElementById('smartPasteText').focus(); }
+        window.processSmartPaste = async function() { 
+            const t=document.getElementById('smartPasteText').value.trim(); 
+            if(!t) return; 
+            setAILoading(true); 
+            try { 
+                const d=await extractVoucherData(t); 
+                fillFormWithAIData(d); 
+                document.getElementById('smartPasteArea').classList.add('hidden'); 
+                document.getElementById('smartPasteText').value=''; 
+            } catch(e) {
+                console.error(e);
+                Dialog.alert(`שגיאה בזיהוי: \n${e.message}`);
+            } finally {
+                setAILoading(false);
+            } 
+        }
+        window.handleSmartScan = function(e) { 
+            const f=e.target.files[0]; 
+            if(!f) return; 
+            const r=new FileReader(); 
+            r.onload=async(ev)=>{ 
+                setAILoading(true); 
+                try {
+                    const d=await extractVoucherData(null,ev.target.result,f.type); 
+                    fillFormWithAIData(d);
+                } catch(err) {
+                    console.error(err);
+                    Dialog.alert(`שגיאה בסריקה: \n${err.message}`);
+                } finally {
+                    setAILoading(false); 
+                    e.target.value='';
+                } 
+            }; 
+            r.readAsDataURL(f); 
+        }
+        function setAILoading(load) { document.getElementById('aiLoading').classList.toggle('hidden',!load); document.getElementById('saveVoucherBtn').disabled=load; }
+        
+        function fillFormWithAIData(d) {
+            if(!d) return;
+            
+            if(d.name && state.categoryMemory && state.categoryMemory[d.name.toLowerCase()]) {
+                d.category = state.categoryMemory[d.name.toLowerCase()];
+            }
+
+            if(d.name) document.getElementById('vName').value=d.name;
+            if(d.description) document.getElementById('vDescription').value=d.description;
+            if(d.value) document.getElementById('vValue').value=d.value;
+            if(d.expiryDate) document.getElementById('vExpiry').value=d.expiryDate;
+            if(d.barcode) document.getElementById('vBarcode').value=d.barcode;
+            if(d.category) { const s=document.getElementById('vCategory'); [...s.options].forEach(o=>{if(o.value===d.category) s.value=d.category;}); }
+            if(d.purchasedFrom) { const s=document.getElementById('vPurchasedFrom'); [...s.options].forEach(o=>{if(o.value.includes(d.purchasedFrom)) s.value=o.value;}); toggleFriendPhone(); }
+        }
+
+        // ההפעלה
+        document.addEventListener('DOMContentLoaded', () => {
+            loadLocalData();
+            setTimeout(initFirebase, 500); 
+        });
+
+    </script>
+</body>
+</html>
