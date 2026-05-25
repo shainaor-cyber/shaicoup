@@ -1254,13 +1254,13 @@
             
             const isCanvasEnvironment = typeof __app_id !== 'undefined';
             
-            // ב-Netlify נשתמש אך ורק במודל הפלאש הציבורי שזמין לכולם עם המפתח שלך.
-            // הסרנו את ה-pro מהרשימה כדי שלא יסתיר שגיאות של המפתח עצמו.
+            // שימוש במודלים המעודכנים ביותר של גוגל לשנת 2026 שעובדים בוודאות עם API Key
             const configsToTry = isCanvasEnvironment ? [
                 { model: 'gemini-2.5-flash-preview-09-2025', key: '' }
             ] : [
-                { model: 'gemini-1.5-flash', key: geminiApiKey },
-                { model: 'gemini-1.5-flash-latest', key: geminiApiKey }
+                { model: 'gemini-2.5-flash', key: geminiApiKey },
+                { model: 'gemini-2.0-flash', key: geminiApiKey },
+                { model: 'gemini-1.5-flash', key: geminiApiKey }
             ];
 
             let errorMessages = [];
@@ -1290,7 +1290,7 @@
                             continue;
                         }
                     } else {
-                        // אוספים את הודעת השגיאה המדויקת מגוגל (למשל: המפתח לא תקין)
+                        // אוספים את הודעת השגיאה המדויקת מגוגל
                         errorMessages.push(`[${config.model}] ${data.error?.message || 'Server Error: ' + response.status}`);
                     }
                 } catch(err) {
@@ -1299,7 +1299,7 @@
             }
             
             // אם כל הנסיונות נכשלו, נציג לך בדיוק מה הייתה השגיאה המקורית של גוגל למפתח שלך!
-            throw new Error(errorMessages.join(" | "));
+            throw new Error(errorMessages.join(" \n\n "));
         }
 
         window.openSmartPaste = function() { const a=document.getElementById('smartPasteArea'); a.classList.toggle('hidden'); if(!a.classList.contains('hidden')) document.getElementById('smartPasteText').focus(); }
@@ -1314,7 +1314,7 @@
                 document.getElementById('smartPasteText').value=''; 
             } catch(e) {
                 console.error(e);
-                Dialog.alert(`שגיאה בזיהוי: \n${e.message}`);
+                Dialog.alert(`שגיאה בזיהוי:\n${e.message}`);
             } finally {
                 setAILoading(false);
             } 
@@ -1330,7 +1330,7 @@
                     fillFormWithAIData(d);
                 } catch(err) {
                     console.error(err);
-                    Dialog.alert(`שגיאה בסריקה: \n${err.message}`);
+                    Dialog.alert(`שגיאה בסריקה:\n${err.message}`);
                 } finally {
                     setAILoading(false); 
                     e.target.value='';
